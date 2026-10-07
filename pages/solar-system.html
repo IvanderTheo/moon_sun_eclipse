@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tata Surya | Jelajah Antariksa</title>
+  <link rel="stylesheet" href="../assets/site.css">
+  <script type="importmap">
+    {"imports":{"three":"https://unpkg.com/three@0.161.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.161.0/examples/jsm/"}}
+  </script>
+  <script type="module" src="../assets/site.js"></script>
+  <script type="module" src="../assets/solar-system.js"></script>
+</head>
+<body data-page="solar-system">
+  <div data-site-nav></div>
+  <main class="page-shell">
+    <div class="page-intro">
+      <p class="eyebrow">Tetangga kosmik kita</p>
+      <h1>Tata Surya</h1>
+      <p class="lead">Pilih benda langit untuk melihat fakta singkatnya. Seret model 3D untuk mengubah sudut pandang.</p>
+    </div>
+    <section class="solar-layout" aria-label="Model interaktif tata surya">
+      <div class="solar-view" id="solar-view">
+        <p class="solar-hint">Seret untuk memutar · gulir untuk memperbesar</p>
+      </div>
+      <aside class="planet-panel" aria-live="polite">
+        <p class="eyebrow">Objek terpilih</p>
+        <h2 id="planet-name">Matahari</h2>
+        <p id="planet-description"></p>
+        <div class="planet-facts">
+          <div class="planet-fact"><small>Urutan</small><strong id="planet-order"></strong></div>
+          <div class="planet-fact"><small>Jenis</small><strong id="planet-type"></strong></div>
+        </div>
+        <div class="planet-list" id="planet-list" aria-label="Pilih benda langit"></div>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

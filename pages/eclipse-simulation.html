@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<title>Simulasi Gerhana 3D</title>
+<style>
+ body, html { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+ canvas { display: block; }
+
+ #topControls {
+ position: fixed;
+ top: 15px;
+ left: 50%;
+ transform: translateX(-50%);
+ display: flex;
+ gap: 12px;
+ z-index: 1000;
+}
+
+ #topControls button {
+ padding: 8px 16px;
+ font-weight: bold;
+ font-size: 14px;
+ border-radius: 6px;
+ border: none;
+ cursor: pointer;
+ background: #1e88ff;
+ color: white;
+ }
+
+ #ui {
+  position: fixed;
+ top: 80px;
+ left: 20px;
+ padding: 15px;
+ background: rgba(0,0,0,0.55);
+ color: #fff;
+ border-radius: 10px;
+ width: 260px;
+ z-index: 999;
+ font-family: Arial;
+ backdrop-filter: blur(4px);
+ }
+
+ #ui label {
+ margin-top: 12px;
+ display: block;
+ font-weight: 600;
+ }
+
+ #ui input { width: 100%; }
+
+ /* Labels untuk Inset, posisinya harus dihitung relatif terhadap inset */
+ .inset-label {
+ position: absolute;
+ right: 10px;
+ z-index: 1400;
+ color: #fff;
+ font-family: Arial;
+ font-weight: 700;
+ font-size: 13px;
+ padding: 6px 10px;
+ background: rgba(0,0,0,0.6);
+ border-radius: 6px;
+ pointer-events: none;
+ display: flex;
+ align-items: center;
+ gap: 8px;
+ }
+
+ .inset-countdown {
+ font-weight: 900;
+ color: #ffdd57;
+ font-size: 13px;
+ }
+
+ .inset-rec {
+ width:10px; height:10px; background: #ff3b30; border-radius:2px; box-shadow:0 0 6px rgba(255,59,48,0.8);
+ }
+
+ /* Menggunakan ONE mask (mainInsetMask) yang akan diposisikan di KANAN ATAS */
+ #mainInsetMask {
+ position: fixed;
+ pointer-events: none;
+ background-color:transparent;
+ border: 2px solid white; 
+ z-index: 1300;
+ opacity: 1;
+ transition: opacity 600ms ease;
+ }
+
+ /* when visible (mask transparent) */
+ #mainInsetMask.revealed { opacity: 0; }
+
+ /* ANOTASI BARU */
+ .annotation-box {
+  position: absolute;
+  background: rgba(4, 91, 194, 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  z-index: 1500;
+  pointer-events: none;
+ }
+
+ #svg-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1450;
+ }
+
+ /* Titik Penanda (Circle SVG) */
+ .annotation-dot {
+   fill: white;
+   r: 4;
+ }
+</style>
+
+<script type="importmap">
+{
+ "imports": {
+ "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+ "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+ }
+}
+</script>
+</head>
+
+<body>
+  <div id="insetLabels" style="position:fixed; z-index:1400; pointer-events:none;"></div>
+
+<div id="svg-container">
+ <svg id="annotation-svg" width="100%" height="100%"></svg>
+</div>
+
+<div id="mainInsetMask" style="display:none"></div>
+
+<div id="topControls">
+ <button id="btnReverse">⏪ Reverse</button>
+ <button id="btnStop">⏸ Stop</button>
+ <button id="btnPlay">▶ Play</button>
+</div>
+
+<div id="ui">
+ <div style="font-weight:600; font-size:16px;">Gerhana — Three.js</div>
+
+ <label>Orbital angle (°): <span id="angleVal">0</span></label>
+ <input id="angle" type="range" min="-30" max="30" step="0.1" value="0">
+
+ <label>Earth distance: <span id="earthVal">10.0</span></label>
+ <input id = "earthDist" type = "range" min ="1.0" max ="13.0" step = "0.01" value = "10.0">
+
+ <label>Moon distance: <span id="distVal">2.0</span></label>
+ <input id="moonDist" type="range" min="1.3" max="3.2" step="0.01" value="2.0">
+
+ <label>Speed: <span id="speedVal">1</span></label>
+ <input id="speed" type="range" min="0" max="2" step="0.01" value="1">
+
+ <button id="reset">Reset</button>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+/* ---------------- SCENE SETUP ---------------- */
+const scene = new THREE.Scene();
+
+const mainCamera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 4000);
+mainCamera.position.set(10, 6, 14);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(mainCamera, renderer.domElement);
+controls.enableDamping = true;
+
+/* ---------------- TEXTURES ---------------- */
+const loader = new THREE.TextureLoader();
+// Asumsi textures tersedia di jalur ini
+const sunTex = loader.load("../models/sunTex.png");
+const earthTex = loader.load("../models/earthTex.png");
+const moonTex = loader.load("../models/moonTex.png");
+
+/* ---------------- OBJECTS ---------------- */
+const EARTH_RADIUS = 1.0;
+const MOON_RADIUS = 0.4;
+const SUN_RADIUS = 2.0;
+
+const sun = new THREE.Mesh(
+new THREE.SphereGeometry(SUN_RADIUS, 64, 64),
+new THREE.MeshBasicMaterial({ map: sunTex })
+);
+sun.position.set(0, 0, 0);
+scene.add(sun);
+//tektur gerhana matahari total
+const originalSunMaterial = sun.material;
+const redSunMaterial = new THREE.MeshStandardMaterial({
+    map: sunTex, 
+    color: new THREE.Color(0xff4444), 
+    emissive: new THREE.Color(0x880000), 
+    emissiveIntensity: 0.8
+});
+
+/* directional sunlight */
+const sunlight = new THREE.DirectionalLight(0xffffff, 2.2);
+sunlight.castShadow = true;
+sunlight.shadow.mapSize.width = 2048;
+sunlight.shadow.mapSize.height = 2048;
+sunlight.shadow.camera.near = 0.5;
+sunlight.shadow.camera.far = 2000;
+sunlight.shadow.radius = 6;
+scene.add(sunlight);
+sunlight.target = new THREE.Object3D();
+scene.add(sunlight.target);
+
+/* Earth */
+const earth = new THREE.Mesh(
+new THREE.SphereGeometry(EARTH_RADIUS, 64, 64),
+new THREE.MeshStandardMaterial({ map: earthTex })
+);
+earth.castShadow = true;
+earth.receiveShadow = true;
+scene.add(earth);
+
+/* Moon */
+const moon = new THREE.Mesh(
+new THREE.SphereGeometry(MOON_RADIUS, 64, 64),
+new THREE.MeshStandardMaterial({ map: moonTex })
+);
+moon.castShadow = true;
+moon.receiveShadow = true;
+scene.add(moon);
+const originalMoonMaterial = moon.material;
+//tektur gerhana bulan total
+const redMoonMaterial = new THREE.MeshStandardMaterial({
+    map: moonTex, 
+    color: new THREE.Color(0xff4444), 
+    emissive: new THREE.Color(0x880000), 
+    emissiveIntensity: 0.8
+});
+
+/* ---------------- STARS (twinkle) ---------------- */
+const starGeo = new THREE.BufferGeometry();
+const starCount = 2500;
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount; i++) {
+starPositions[i*3+0] = (Math.random()-0.5) * 1000;
+starPositions[i*3+1] = (Math.random()-0.5) * 1000;
+starPositions[i*3+2] = (Math.random()-0.5) * 1000;
+}
+starGeo.setAttribute("position", new THREE.BufferAttribute(starPositions, 3));
+
+const starMat = new THREE.PointsMaterial({
+color: 0xffffff,
+size: 1.2,
+transparent: true,
+opacity: 0.85,
+depthWrite: false
+});
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
+
+/* ---------------- ANIMATION VARIABLES & CONTROLS ---------------- */
+let baseEarth = 0.0004;
+let baseMoon = 0.0032;
+
+let timeEarth = 0;
+let timeMoon = 0;
+
+let speedFactor = 1;      
+let userSpeedFactor = 1;  
+let direction = 1;
+let isAutoStopped = false;
+
+let angleDeg = 0;
+let moonDist = 2;
+
+let earthDist = 10;
+
+/* sliders + controls */
+const angleSlider = document.getElementById("angle");
+const distSlider = document.getElementById("moonDist");
+const earthSlider = document.getElementById("earthDist");
+const earthVal = document.getElementById("earthVal");
+const speedSlider = document.getElementById("speed");
+const angleVal = document.getElementById("angleVal");
+const distVal = document.getElementById("distVal");
+const speedVal = document.getElementById("speedVal");
+
+angleSlider.oninput = () => { angleDeg = parseFloat(angleSlider.value); angleVal.innerText = angleDeg.toFixed(1); };
+distSlider.oninput = () => { moonDist = parseFloat(distSlider.value); distVal.innerText = moonDist.toFixed(2); };
+earthSlider.oninput = () => {earthDist = parseFloat(earthSlider.value); earthVal.innerText = earthDist.toFixed(2);};
+
+// Diperbarui: Speed slider sekarang hanya mengubah nilai slider, tidak memengaruhi speedFactor secara langsung
+// speedFactor akan diatur di dalam loop animate berdasarkan `direction`
+speedSlider.oninput = () => { 
+    userSpeedFactor = parseFloat(speedSlider.value); 
+    speedVal.innerText = userSpeedFactor.toFixed(2); 
+
+  
+    if (direction !== 0) {
+        speedFactor = userSpeedFactor;
+    }
+};
+
+// Diperbarui: Saat tombol Play/Stop/Reverse ditekan, atur `direction` dan pastikan `speedFactor` (yang diwakili oleh slider) diset ulang ke nilai aslinya jika sebelumnya 0 (dihentikan oleh gerhana)
+document.getElementById("btnPlay").onclick = () => { 
+  direction = 1;
+  isAutoStopped = false;
+  // Jika speedFactor adalah 0 (karena auto-stop), kembalikan ke kecepatan pengguna
+  if(speedFactor === 0) {
+    speedFactor = userSpeedFactor; 
+    speedSlider.value = userSpeedFactor; 
+    speedVal.innerText = userSpeedFactor.toFixed(2);
+  }
+};
+document.getElementById("btnStop").onclick = () => {
+    direction = 0;
+    isAutoStopped = false;
+};
+document.getElementById("btnReverse").onclick = () => {
+  direction = -1;
+  isAutoStopped = false;
+  // Jika speedFactor adalah 0 (karena auto-stop), kembalikan ke kecepatan pengguna
+  if(speedFactor === 0) {
+    speedFactor = userSpeedFactor;
+    speedSlider.value = userSpeedFactor; 
+    speedVal.innerText = userSpeedFactor.toFixed(2);
+  }
+};
+
+document.getElementById("reset").onclick = () => {
+angleSlider.value = 0; distSlider.value = 2; speedSlider.value = 1; earthSlider.value = 10
+angleDeg = 0; moonDist = 2; speedFactor = 1; direction = 1; earthDist = 10;
+angleVal.innerText = "0"; distVal.innerText = "2.0"; speedVal.innerText = "1"; earthVal.innerText = "10.0";
+};
+
+/* ---------------- INSET CAMERAS & ECLIPSE LOGIC ---------------- */
+const INSET_W_DEFAULT = 540;
+const INSET_H_DEFAULT = 380;
+const INSET_MARGIN = 18;
+const INSET_GAP = 12;
+let INSET_W = INSET_W_DEFAULT;
+let INSET_H = INSET_H_DEFAULT;
+
+// VARIABEL GLOBAL UNTUK POSISI VIEWPORT INSET (Sekarang KANAN ATAS)
+let xRight = 0;
+let yTop = 0; 
+
+const earthBackPOVCam = new THREE.PerspectiveCamera(48, INSET_W / INSET_H, 0.01, 4000);
+const earthFrontPOVCam = new THREE.PerspectiveCamera(48, INSET_W / INSET_H, 0.01, 4000);
+const insetLabels = document.getElementById("insetLabels");
+const annotationSVG = document.getElementById("annotation-svg");
+
+// HANYA SATU MASK UTAMA
+const mainInsetMask = document.getElementById("mainInsetMask");
+
+/* helper label creation */
+function makeLabel(text, countdownText, topPx) {
+const el = document.createElement("div");
+el.className = "inset-label";
+// Posisi relatif terhadap container insetLabels
+el.style.top = `${topPx}px`;
+el.style.right = `${INSET_MARGIN}px`;
+el.innerHTML = `<span class="inset-rec"></span><span>${text}</span><span class="inset-countdown">${countdownText}</span>`;
+return el;
+}
+
+/* ---------------- ECLIPSE DETECTION, ESTIMATE TIME, MASK HELPERS & RENDER ---------------- */
+const SOLAR_ANGLE_THRESHOLD = 0.15;
+const LUNAR_ANGLE_THRESHOLD = 0.16;
+const LINE_DISTANCE_THRESHOLD = 1.4;
+
+// Threshold untuk Gerhana PENUH (lebih kecil)
+const FULL_ECLIPSE_SOLAR_THRESHOLD = 0.001; 
+const FULL_ECLIPSE_LUNAR_THRESHOLD = 0.001; 
+const FULL_ECLIPSE_DISTANCE_THRESHOLD = 0.005; // Jarak mendekati 0 untuk kesejajaran sempurna
+
+let solarEclipseLastSeen = -Infinity;
+let lunarEclipseLastSeen = -Infinity;
+const INSET_VISIBLE_DURATION = 4000;
+const INSET_APPROACH_MULT = 2.0;
+const requestedMode = new URLSearchParams(window.location.search).get("mode");
+
+function detectEclipses() {
+const vEtoS = new THREE.Vector3().subVectors(sun.position, earth.position).normalize();
+const vEtoM = new THREE.Vector3().subVectors(moon.position, earth.position).normalize();
+const solarAngle = vEtoS.angleTo(vEtoM);
+
+const vMtoS = new THREE.Vector3().subVectors(sun.position, moon.position).normalize();
+const vMtoE = new THREE.Vector3().subVectors(earth.position, moon.position).normalize();
+const lunarAngle = vMtoS.angleTo(vMtoE);
+
+// perpendicular distance from Moon to Sun-Earth line
+const sunToEarth = new THREE.Vector3().subVectors(earth.position, sun.position);
+const sunToMoon = new THREE.Vector3().subVectors(moon.position, sun.position);
+const proj = sunToMoon.clone().projectOnVector(sunToEarth);
+const perp = sunToMoon.clone().sub(proj);
+const lineDistance = perp.length();
+
+const solarImminent = (solarAngle < SOLAR_ANGLE_THRESHOLD * INSET_APPROACH_MULT) || (lineDistance < LINE_DISTANCE_THRESHOLD);
+const lunarImminent = (lunarAngle < LUNAR_ANGLE_THRESHOLD * INSET_APPROACH_MULT) || (lineDistance < (LINE_DISTANCE_THRESHOLD * 1.2));
+
+// Logika Gerhana Penuh
+const solarFull = solarAngle < FULL_ECLIPSE_SOLAR_THRESHOLD && lineDistance < FULL_ECLIPSE_DISTANCE_THRESHOLD;
+const lunarFull = lunarAngle < FULL_ECLIPSE_LUNAR_THRESHOLD && lineDistance < FULL_ECLIPSE_DISTANCE_THRESHOLD;
+
+return { solarImminent, lunarImminent, solarAngle, lunarAngle, lineDistance, solarFull, lunarFull };
+}
+
+// ==========================================================
+// FUNSI ESTIMASI WAKTU HILANG (DITAMBAHKAN KEMBALI)
+// ==========================================================
+function estimateTimeToSolarPeak(simE, simM, horizonFrames = 3000) {
+ let tE = simE, tM = simM;
+ const dtE = baseEarth * speedFactor * Math.sign(direction || 1);
+ const dtM = baseMoon * speedFactor * Math.sign(direction || 1);
+ let minAng = Infinity, minFrame = 0;
+ for (let f=0; f<horizonFrames; f++) {
+  const fe = new THREE.Vector3(Math.cos(tE)*6, 0, Math.sin(tE)*6);
+  const fm = new THREE.Vector3(fe.x + Math.cos(tM)*moonDist, fe.y, fe.z + Math.sin(tM)*moonDist);
+  const v1 = new THREE.Vector3().subVectors(sun.position, fe).normalize();
+  const v2 = new THREE.Vector3().subVectors(fm, fe).normalize();
+  const ang = v1.angleTo(v2);
+  if (ang < minAng) { minAng = ang; minFrame = f; }
+  tE += dtE; tM += dtM;
+ }
+ return minFrame / 60;
+}
+
+function estimateTimeToLunarPeak(simE, simM, horizonFrames = 3000) {
+ let tE = simE, tM = simM;
+ const dtE = baseEarth * speedFactor * Math.sign(direction || 1);
+ const dtM = baseMoon * speedFactor * Math.sign(direction || 1);
+ let minAng = Infinity, minFrame = 0;
+ for (let f=0; f<horizonFrames; f++) {
+  const fe = new THREE.Vector3(Math.cos(tE)*6, 0, Math.sin(tE)*6);
+  const fm = new THREE.Vector3(fe.x + Math.cos(tM)*moonDist, fe.y, fe.z + Math.sin(tM)*moonDist);
+  const v1 = new THREE.Vector3().subVectors(sun.position, fm).normalize();
+  const v2 = new THREE.Vector3().subVectors(fe, fm).normalize();
+  const ang = v1.angleTo(v2);
+  if (ang < minAng) { minAng = ang; minFrame = f; }
+  tE += dtE; tM += dtM;
+ }
+ return minFrame / 60;
+}
+
+
+const FADE_MS = 600;
+
+function showMask(maskEl, x, y, w, h) {
+maskEl.style.left = x + "px";
+maskEl.style.top = y + "px";
+maskEl.style.width = w + "px";
+maskEl.style.height = h + "px";
+maskEl.style.display = "block";
+maskEl.classList.remove("revealed");
+requestAnimationFrame(() => {
+ maskEl.classList.add("revealed");
+});
+}
+
+function hideMask(maskEl) {
+maskEl.classList.remove("revealed");
+setTimeout(() => {
+ maskEl.style.display = "none";
+}, FADE_MS + 20);
+}
+
+function renderInset(camera, x, y, w, h) {
+camera.aspect = w / h;
+camera.updateProjectionMatrix();
+// Menggunakan window.innerHeight - (y + h) untuk konversi dari top-down CSS ke bottom-up WebGL
+renderer.setViewport(x, window.innerHeight - (y + h), w, h);
+renderer.setScissor(x, window.innerHeight - (y + h), w, h);
+renderer.setScissorTest(true);
+renderer.render(scene, camera);
+renderer.setScissorTest(false);
+}
+
+/* ---------------- FUNGSI ANOTASI BARU MENGGUNAKAN SVG ---------------- */
+
+// Posisi Anotasi (Relatif terhadap Viewport Kanan Atas)
+function createAnnotation(left, top, text, targetX, targetY) {
+ // 1. Teks Anotasi (Box)
+ const box = document.createElement('div');
+ box.className = 'annotation-box';
+
+ // Menghitung posisi ABSOLUT kotak teks
+ const boxLeftAbs = xRight + left;
+ const boxTopAbs = yTop + top;
+
+ box.style.left = `${boxLeftAbs}px`;
+ box.style.top = `${boxTopAbs}px`;
+ box.innerHTML = text;
+ document.body.appendChild(box);
+
+ // Posisi awal garis (diasumsikan anotasi berada di kiri target)
+ const startX = boxLeftAbs + box.offsetWidth + 2;
+ const startY = boxTopAbs + box.offsetHeight / 2;
+
+ // Posisi target (titik di dalam viewport, relatif terhadap viewport)
+ const endX = xRight + targetX;
+ const endY = yTop + targetY;
+
+ // 2. Garis Penunjuk (SVG Line)
+ const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+ line.setAttribute('x1', startX);
+ line.setAttribute('y1', startY);
+ line.setAttribute('x2', endX);
+ line.setAttribute('y2', endY);
+ line.setAttribute('stroke', '#fff');
+ line.setAttribute('stroke-width', '2');
+
+ annotationSVG.appendChild(line);
+
+ // 3. Titik Penanda (SVG Circle)
+ const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+ dot.setAttribute('cx', endX);
+ dot.setAttribute('cy', endY);
+ dot.setAttribute('class', 'annotation-dot');
+
+ annotationSVG.appendChild(dot);
+}
+
+
+/* ---------------- MAIN LOOP ---------------- */
+function animate() {
+requestAnimationFrame(animate);
+
+// Update simulation time HANYA jika direction > 0
+if (direction !== 0) {
+  timeEarth += baseEarth * speedFactor * direction;
+  timeMoon += baseMoon * speedFactor * direction;
+}
+
+const t = timeEarth, m = timeMoon;
+const tilt = angleDeg * Math.PI / 180;
+
+// earth position
+earth.position.set(Math.cos(t) * earthDist, Math.sin(tilt) * 1.2, Math.sin(t) * earthDist);
+
+// moon orbit
+moon.position.set(
+ earth.position.x + Math.cos(m) * moonDist,
+ earth.position.y + Math.sin(tilt) * 0.5,
+ earth.position.z + Math.sin(m) * moonDist
+);
+
+// sunlight aim
+sunlight.target.position.copy(earth.position);
+sunlight.position.copy(sun.position).add(new THREE.Vector3(0.0001, 0.0001, 0.0001));
+
+// stars twinkle
+const tStar = Date.now() * 0.0021;
+starMat.opacity = 0.7 + Math.sin(tStar) * 0.25;
+
+// rotations
+earth.rotation.y += 0.01;
+moon.rotation.y += 0.014;
+
+controls.update();
+
+// MAIN render
+renderer.setViewport(0, 0, window.innerWidth, window.innerHeight);
+renderer.setScissor(0, 0, window.innerWidth, window.innerHeight);
+renderer.setScissorTest(true);
+renderer.render(scene, mainCamera);
+renderer.setScissorTest(false);
+
+// detect eclipses
+const { solarImminent, lunarImminent, solarAngle, lunarAngle, lineDistance, solarFull, lunarFull } = detectEclipses();
+
+const now = performance.now();
+// Update last-seen times when approaching
+const approachSolar = solarAngle < SOLAR_ANGLE_THRESHOLD * INSET_APPROACH_MULT || lineDistance < LINE_DISTANCE_THRESHOLD;
+const approachLunar = lunarAngle < LUNAR_ANGLE_THRESHOLD * INSET_APPROACH_MULT || lineDistance < (LINE_DISTANCE_THRESHOLD * 1.2);
+if (approachSolar) solarEclipseLastSeen = now;
+if (approachLunar) lunarEclipseLastSeen = now;
+
+const showSolarDesired = (now - solarEclipseLastSeen) < INSET_VISIBLE_DURATION;
+const showLunarDesired = (now - lunarEclipseLastSeen) < INSET_VISIBLE_DURATION;
+
+// LOGIKA PERGANTIAN KAMERA BERDASARKAN KESELARASAN TERDEKAT
+let activeMode = null;
+
+if (requestedMode === "solar") {
+ activeMode = showSolarDesired ? "solar" : null;
+} else if (requestedMode === "lunar") {
+ activeMode = showLunarDesired ? "lunar" : null;
+} else if (showSolarDesired && solarAngle < lunarAngle) {
+ activeMode = 'solar';
+}
+else if (showLunarDesired && lunarAngle < solarAngle) {
+ activeMode = 'lunar';
+}
+else if (showSolarDesired) {
+ activeMode = 'solar';
+} else if (showLunarDesired) {
+ activeMode = 'lunar';
+}
+
+INSET_W = Math.min(INSET_W_DEFAULT, Math.floor(window.innerWidth * 0.52));
+INSET_H = Math.min(INSET_H_DEFAULT, Math.floor(window.innerHeight * 0.44));
+xRight = window.innerWidth - INSET_W - INSET_MARGIN;
+yTop = INSET_MARGIN; 
+
+insetLabels.innerHTML = "";
+document.querySelectorAll('.annotation-box').forEach(el => el.remove());
+annotationSVG.innerHTML = "";
+
+insetLabels.style.left = `${xRight}px`;
+insetLabels.style.top = `${yTop}px`;
+insetLabels.style.width = `${INSET_W}px`;
+insetLabels.style.height = `${INSET_H}px`;
+insetLabels.style.right = 'auto';
+
+// LOGIKA STOP GERHANA
+let shouldStop = (activeMode === 'solar' && solarFull) || (activeMode === 'lunar' && lunarFull);
+if (shouldStop && direction !== 0) {
+ 
+  direction = 0;
+  speedFactor = 0;
+  isAutoStopped = true; 
+  
+  speedSlider.value = 0;
+  speedVal.innerText = "0.00";
+}
+// Jika gerhana penuh terdeteksi dan animasi sedang berjalan
+if (shouldStop && direction !== 0) {
+ 
+  direction = 0;
+  speedFactor = 0;
+  
+  speedSlider.value = 0;
+  speedVal.innerText = "0.00";
+}
+
+
+// Sembunyikan mask jika tidak ada mode yang aktif
+if (activeMode === null && mainInsetMask.style.display !== "none") {
+ hideMask(mainInsetMask);
+}
+
+if (activeMode === 'solar') {
+ const distanceMultiply = 6.0;
+ const offset = new THREE.Vector3().subVectors(earth.position, moon.position).normalize().multiplyScalar(distanceMultiply * MOON_RADIUS * 1.25);
+ earthFrontPOVCam.position.copy(moon.position).add(offset);
+ earthFrontPOVCam.up.set(0,1,0);
+ earthFrontPOVCam.lookAt(earth.position);
+
+ const seconds = estimateTimeToSolarPeak(timeEarth, timeMoon, 3000);
+ const txt = isAutoStopped ? "ECLIPSE MAX!" : (seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`);
+ insetLabels.appendChild(makeLabel("Earth POV facing Sun (Solar Condition)", txt, 2));
+
+ // Tampilkan mask dan render
+ showMask(mainInsetMask, xRight, yTop, INSET_W, INSET_H);
+ renderInset(earthFrontPOVCam, xRight, yTop, INSET_W, INSET_H);
+
+ //tekstur gerhana bulan total
+ if (direction === 0 && solarFull) { 
+    sun.material = redSunMaterial;
+ } else {
+    sun.material = originalSunMaterial;
+ }
+
+ // ANOTASI HANYA MUNCUL JIKA ANIMASI BERHENTI (Gerhana Penuh)
+ if (isAutoStopped) {
+  // Anotasi 1: Umbra Bayangan Bumi (Menunjuk ke bagian tengah Bumi)
+  createAnnotation(10, 10,
+   '<b>Moon Disk</b>: Bulan menutupi Matahari.<br>Terjadi totalitas.',
+   INSET_W * 0.5, INSET_H * 0.5);
+
+  // Anotasi 2: Penumbra Bayangan Bumi (Menunjuk ke tepi Bumi)
+  createAnnotation(INSET_W - 220, INSET_H - 70,
+   '<b>Solar Corona</b>: Atmosfer luar Matahari.<br>Terlihat saat gerhana penuh.',
+   INSET_W * 0.55, INSET_H * 0.655);
+ } else {
+  if (sun.material !== originalSunMaterial) {
+        sun.material = originalSunMaterial;
+    }
+ }
+}
+
+else if (activeMode === 'lunar') {
+ const distanceMultiply = 6.0;
+ const offset = new THREE.Vector3().subVectors(earth.position, moon.position).normalize().multiplyScalar(distanceMultiply * MOON_RADIUS * 1.25);
+ earthBackPOVCam.position.copy(moon.position).add(offset);
+ earthBackPOVCam.up.set(0,1,0);
+ earthBackPOVCam.lookAt(earth.position); 
+
+ const seconds = estimateTimeToLunarPeak(timeEarth, timeMoon, 3000);
+ const txt = isAutoStopped ? "ECLIPSE MAX!" : (seconds < 1 ? "T- <1s" : `T- ${seconds.toFixed(1)}s`);
+ insetLabels.appendChild(makeLabel("Earth POV facing moon (Lunar Condition)", txt, 2));
+
+ // Tampilkan mask dan render
+ showMask(mainInsetMask, xRight, yTop, INSET_W, INSET_H);
+ renderInset(earthBackPOVCam, xRight, yTop, INSET_W, INSET_H);
+ 
+
+ //tekstur gerhana bulan total
+ if (direction === 0 && lunarFull) { 
+    moon.material = redMoonMaterial;
+ } else {
+    moon.material = originalMoonMaterial;
+ }
+
+ // ANOTASI HANYA MUNCUL JIKA ANIMASI BERHENTI (Gerhana Penuh)
+ if (isAutoStopped) {
+  // Anotasi 1: Bulan (Menunjuk ke cakram gelap di tengah)
+  createAnnotation(20, 30,
+   '<b>Umbra</b>: Bayangan terdalam dan tergelap dari Bumi. Di sini,<br> Bulan benar-benar terhalang dari Matahari langsung.',
+   INSET_W * 0.5, INSET_H * 0.5);
+
+  // Anotasi 2: Korona (Menunjuk ke tepi luar cahaya)
+  createAnnotation(INSET_W - 220, INSET_H - 70,
+   '<b>Penumbra</b>: Bayangan luar Bumi yang kabur. <br> Bulan di sini masih menerima sebagian cahaya Matahari.',
+   INSET_W * 0.596, INSET_H * 0.5);
+ }
+} else {
+ // Tidak ada gerhana yang mendekat, sembunyikan mask
+ if (moon.material !== originalMoonMaterial) {
+        moon.material = originalMoonMaterial;
+    }
+ hideMask(mainInsetMask);
+}
+}
+
+animate();
+
+/* ---------------- RESIZE ---------------- */
+window.addEventListener("resize", () => {
+mainCamera.aspect = window.innerWidth / window.innerHeight;
+mainCamera.updateProjectionMatrix();
+renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kuis Antariksa | Jelajah Antariksa</title>
+  <link rel="stylesheet" href="../assets/site.css">
+  <script type="module" src="../assets/site.js"></script>
+  <script type="module" src="../assets/quiz.js"></script>
+</head>
+<body data-page="quiz">
+  <div data-site-nav></div>
+  <main class="page-shell">
+    <div class="page-intro">
+      <p class="eyebrow">Cek pengetahuanmu</p>
+      <h1>Kuis Antariksa</h1>
+      <p class="lead">Jawab lima pertanyaan tentang Tata Surya dan gerhana. Kamu akan langsung mendapat umpan balik untuk setiap jawaban.</p>
+    </div>
+    <section class="quiz-card" id="quiz-card" aria-live="polite">
+      <div class="quiz-meta"><span id="quiz-progress"></span><span id="quiz-score"></span></div>
+      <div class="progress-track" aria-hidden="true"><div class="progress-fill" id="progress-fill"></div></div>
+      <h2 class="quiz-question" id="quiz-question"></h2>
+      <div class="answer-list" id="answer-list"></div>
+      <p class="quiz-feedback" id="quiz-feedback"></p>
+      <div class="quiz-actions">
+        <span></span>
+        <button class="button" id="next-question" type="button" disabled>Pertanyaan berikutnya</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

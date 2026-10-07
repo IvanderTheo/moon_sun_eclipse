@@ -1,0 +1,8 @@
+.git
+.vscode
+.idea
+.env
+node_modules
+**/node_modules
+models/*.glb
+models/stars.jpg
