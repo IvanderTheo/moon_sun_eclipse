@@ -90,13 +90,20 @@ const descriptionElement = document.querySelector("#planet-description");
 const orderElement = document.querySelector("#planet-order");
 const typeElement = document.querySelector("#planet-type");
 const list = document.querySelector("#planet-list");
+const annotation = document.querySelector("#planet-annotation");
 const buttons = new Map();
+let selectedMesh = sun;
+let selectedSize = objects[0].size;
 
 function selectObject(item, button) {
   nameElement.textContent = item.name;
   descriptionElement.textContent = item.description;
   orderElement.textContent = item.name === "Matahari" ? "Pusat sistem" : `${objects.indexOf(item)} dari Matahari`;
   typeElement.textContent = item.type;
+  selectedMesh = item.name === "Matahari" ? sun : planets.find(({ item: planet }) => planet === item).mesh;
+  selectedSize = item.size;
+  annotation.textContent = item.name;
+  annotation.hidden = false;
   buttons.forEach((entry) => entry.setAttribute("aria-pressed", String(entry === button)));
 }
 
@@ -121,6 +128,25 @@ function resize() {
 }
 new ResizeObserver(resize).observe(host);
 
+function positionAnnotation() {
+  scene.updateMatrixWorld(true);
+  const anchor = selectedMesh.getWorldPosition(new THREE.Vector3());
+  anchor.y += selectedSize * 1.35;
+  anchor.project(camera);
+
+  const width = host.clientWidth;
+  const height = host.clientHeight;
+  const x = (anchor.x + 1) * width / 2;
+  const y = (-anchor.y + 1) * height / 2;
+  const visible = anchor.z >= -1 && anchor.z <= 1 && x >= 0 && x <= width && y >= 0 && y <= height;
+  annotation.hidden = !visible;
+  if (visible) {
+    const halfWidth = annotation.offsetWidth / 2;
+    annotation.style.left = `${Math.max(halfWidth + 8, Math.min(width - halfWidth - 8, x))}px`;
+    annotation.style.top = `${y}px`;
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
   planets.forEach(({ item, pivot, mesh }) => {
@@ -129,6 +155,8 @@ function animate() {
   });
   sun.rotation.y += .001;
   controls.update();
+  camera.updateMatrixWorld();
+  positionAnnotation();
   renderer.render(scene, camera);
 }
 animate();
